@@ -328,6 +328,13 @@ impl ConfigParams {
             _ => fail!("no config 42 (copyleft)")
         }
     }
+    pub fn suspended_addresses(&self) -> Result<Option<SuspendedAddresses>> {
+        match self.config(44)? {
+            Some(ConfigParamEnum::ConfigParam44(sa)) => Ok(Some(sa)),
+            None => Ok(None),
+            _ =>  fail!("wrong config 44 (suspended addresses)")
+        }
+    }
     // TODO 39 validator signed temp keys
 }
 
@@ -355,6 +362,7 @@ pub enum GlobalCapabilities {
     CapCopyleft               = 0x040000,
     CapIndexAccounts          = 0x080000,
     CapDiff                   = 0x100000,
+    CapSuspendedList = 0x8000_0000,
 }
 
 impl ConfigParams {
@@ -532,6 +540,7 @@ pub enum ConfigParamEnum {
     ConfigParam39(ConfigParam39),
     ConfigParam40(ConfigParam40),
     ConfigParam42(ConfigCopyleft),
+    ConfigParam44(SuspendedAddresses),
     ConfigParamAny(u32, SliceData),
 }
 
@@ -591,6 +600,7 @@ impl ConfigParamEnum {
             39 => { read_config!(ConfigParam39, ConfigParam39, slice) },
             40 => { read_config!(ConfigParam40, ConfigParam40, slice) },
             42 => { read_config!(ConfigParam42, ConfigCopyleft, slice) },
+            44 => { read_config!(ConfigParam44, SuspendedAddresses, slice) },
             index => Ok(ConfigParamEnum::ConfigParamAny(index, slice.clone())),
         }
     }
@@ -635,6 +645,7 @@ impl ConfigParamEnum {
             ConfigParamEnum::ConfigParam39(ref c) => { cell.append_reference_cell(c.serialize()?); Ok(39)},
             ConfigParamEnum::ConfigParam40(ref c) => { cell.append_reference_cell(c.serialize()?); Ok(40)},
             ConfigParamEnum::ConfigParam42(ref c) => { cell.append_reference_cell(c.serialize()?); Ok(42)},
+            ConfigParamEnum::ConfigParam44(ref c) => { cell.append_reference_cell(c.serialize()?); Ok(44)},
             ConfigParamEnum::ConfigParamAny(index, slice) => { 
                 cell.append_reference_cell(slice.clone().into_cell()); 
                 Ok(*index)
@@ -3208,3 +3219,38 @@ impl Serializable for ConfigCopyleft {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub struct SuspendedAddressesKey {
+    pub workchain_id: i32,
+    pub address: UInt256,
+}
+impl SuspendedAddressesKey {
+    pub fn new(workchain_id: i32, address: UInt256) -> Self {
+        Self { workchain_id, address }
+    }
+}
+impl Serializable for SuspendedAddressesKey {
+    fn write_to(&self, cell: &mut BuilderData) -> Result<()> {
+        cell.append_i32(self.workchain_id)?;
+        cell.append_raw(self.address.as_slice(), 256)?;
+        Ok(())
+    }
+}
+impl Deserializable for SuspendedAddressesKey {
+    fn read_from(&mut self, slice: &mut SliceData) -> Result<()> {
+        self.workchain_id = slice.get_next_i32()?;
+        self.address = UInt256::construct_from(slice)?;
+        Ok(())
+    }
+}
+define_HashmapE!{SuspendedAddresses, 288, ()}
+impl SuspendedAddresses {
+    pub fn is_suspended(&self, wc: i32, addr: UInt256) -> Result<bool> {
+        let key = SuspendedAddressesKey::new(wc, addr);
+        Ok(self.get(&key)?.is_some())
+    }
+    pub fn add_suspended_address(&mut self, wc: i32, addr: UInt256) -> Result<()> {
+        let key = SuspendedAddressesKey::new(wc, addr);
+        self.set(&key, &())
+    }
+}

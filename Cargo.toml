@@ -20,7 +20,7 @@ name = "ton_block"
 version = "1.7.14"
 
 [dependencies]
-ton_types = { git = "https://github.com/broxus/ton-labs-types.git" }
+ton_types = { git = "https://github.com/broxus/ton-labs-types.git", branch = "old" }
 
 # External
 anyhow = "1"
