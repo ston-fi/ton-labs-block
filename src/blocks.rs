@@ -863,10 +863,6 @@ impl BlockExtra {
     pub fn set_ref_shard_blocks(&mut self, value: RefShardBlocks) {
         self.ref_shard_blocks = value;
     }
-
-    pub fn is_key_block(&self) -> bool {
-        self.custom.is_some()
-    }
 }
 
 const BLOCK_EXTRA_TAG: u32 = 0x4a33f6fd;
