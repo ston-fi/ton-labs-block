@@ -1378,6 +1378,14 @@ impl Message {
             || self.dst_workchain_id() == Some(MASTERCHAIN_ID)
     }
 
+    pub fn body_to_ref(&self) -> Option<bool> {
+        self.body_to_ref
+    }
+
+    pub fn init_to_ref(&self) -> Option<bool> {
+        self.init_to_ref
+    }
+
     pub fn prepare_proof(&self, is_inbound: bool, block_root: &Cell) -> Result<Cell> {
 
         // proof for message and block info in block
