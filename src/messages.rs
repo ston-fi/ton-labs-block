@@ -1551,11 +1551,7 @@ impl Deserializable for Message {
             Some(SliceData::load_cell(cell.checked_drain_reference()?)?)
         } else {
             self.body_to_ref = Some(false);
-            if cell.is_empty() { // no body
-                None
-            } else { // body is leftover
-                Some(cell.clone())
-            }
+            Some(cell.clone())
         };
         Ok(())
     }
