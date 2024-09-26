@@ -520,11 +520,16 @@ impl Deserializable for InMsg {
             MSG_DISCARD_TR => read_msg_descr!(cell, InMsgDiscardedTransit, DiscardedTransit),
             #[cfg(feature = "ton")]
             0b00000001 => {
-                let subtag = cell.get_next_bit()?;
-                if subtag {
-                    read_msg_descr!(cell, InMsgDeferredTransit, DeferredTransit)
-                } else {
-                    read_msg_descr!(cell, InMsgDeferredFinal, DeferredFinal)
+                let subtag = cell.get_next_bits(2)?[0];
+                match subtag {
+                    0b00 => read_msg_descr!(cell, InMsgDeferredFinal, DeferredFinal),
+                    0b01 => read_msg_descr!(cell, InMsgDeferredTransit, DeferredTransit),
+                    _ => fail!(
+                        BlockError::InvalidConstructorTag {
+                            t: ((tag << 2) | subtag) as u32,
+                            s: "InMsg".to_string()
+                        }
+                    )
                 }
             }
             tag => fail!(
