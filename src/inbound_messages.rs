@@ -113,9 +113,9 @@ const MSG_IMPORT_TR: u8 = 0b00000101;
 const MSG_DISCARD_FIN: u8 = 0b00000110;
 const MSG_DISCARD_TR: u8 = 0b00000111;
 #[cfg(feature = "ton")]
-const MSG_IMPORT_DEFERRED_FIN: u8 = 0b00100;
+const MSG_IMPORT_DEFERRED_FIN: u8 = 0b00000100;
 #[cfg(feature = "ton")]
-const MSG_IMPORT_DEFERRED_TR: u8 = 0b00101;
+const MSG_IMPORT_DEFERRED_TR: u8 = 0b00000101;
 
 ///
 /// Inbound message
@@ -519,7 +519,7 @@ impl Deserializable for InMsg {
             MSG_DISCARD_FIN => read_msg_descr!(cell, InMsgDiscardedFinal, DiscardedFinal),
             MSG_DISCARD_TR => read_msg_descr!(cell, InMsgDiscardedTransit, DiscardedTransit),
             #[cfg(feature = "ton")]
-            0b00100000 => {
+            0b00000001 => {
                 let subtag = cell.get_next_bit()?;
                 if subtag {
                     read_msg_descr!(cell, InMsgDeferredTransit, DeferredTransit)
