@@ -358,18 +358,57 @@ impl Deserializable for IntermediateAddressExt {
     }
 }
 
+// msg_metadata#0 depth:uint32 initiator_addr:MsgAddressInt initiator_lt:uint64 = MsgMetadata;
+#[cfg(feature = "ton")]
+#[derive(Clone, Default, Debug, Eq, PartialEq)]
+pub struct MsgMetadata {
+    pub depth: u32,
+    pub initiator_addr: crate::MsgAddressInt,
+    pub initiator_lt: u64,
+}
+
+#[cfg(feature = "ton")]
+impl Serializable for MsgMetadata {
+    fn write_to(&self, cell: &mut BuilderData) -> Result<()> {
+        self.depth.write_to(cell)?;
+        self.initiator_addr.write_to(cell)?;
+        self.initiator_lt.write_to(cell)?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "ton")]
+impl Deserializable for MsgMetadata {
+    fn read_from(&mut self, cell: &mut SliceData) -> Result<()> {
+        self.depth.read_from(cell)?;
+        self.initiator_addr.read_from(cell)?;
+        self.initiator_lt.read_from(cell)?;
+        Ok(())
+    }
+}
+
 // msg_envelope#4
 //   cur_addr:IntermediateAddress
 //   next_addr:IntermediateAddress
 //   fwd_fee_remaining:Grams
 //   msg:^(Message Any)
 // = MsgEnvelope;
+//
+// msg_envelope_v2#5 cur_addr:IntermediateAddress
+//   next_addr:IntermediateAddress fwd_fee_remaining:Grams
+//   msg:^(Message Any)
+//   emitted_lt:(Maybe uint64)
+//   metadata:(Maybe MsgMetadata) = MsgEnvelope;
 #[derive(Clone, Default, Debug, Eq, PartialEq)]
 pub struct MsgEnvelope {
     cur_addr: IntermediateAddress,
     next_addr: IntermediateAddress,
     fwd_fee_remaining: Grams,
     msg: ChildCell<Message>,
+    #[cfg(feature = "ton")]
+    emitted_lt: Option<u64>,
+    #[cfg(feature = "ton")]
+    metadata: Option<MsgMetadata>,
 }
 
 impl MsgEnvelope {
@@ -414,6 +453,10 @@ impl MsgEnvelope {
             next_addr,
             fwd_fee_remaining,
             msg: ChildCell::with_cell(msg_cell),
+            #[cfg(feature = "ton")]
+            emitted_lt: None,
+            #[cfg(feature = "ton")]
+            metadata: None,
         }
     }
 
@@ -435,6 +478,10 @@ impl MsgEnvelope {
             next_addr: route_info.1,
             fwd_fee_remaining,
             msg: ChildCell::with_cell(msg_cell),
+            #[cfg(feature = "ton")]
+            emitted_lt: None,
+            #[cfg(feature = "ton")]
+            metadata: None,
         })
     }
 
@@ -537,14 +584,25 @@ impl MsgEnvelope {
 }
 
 const MSG_ENVELOPE_TAG : usize = 0x4;
+#[cfg(feature = "ton")]
+const MSG_ENVELOPE_TAG_TON : usize = 0x5;
 
 impl Serializable for MsgEnvelope {
     fn write_to(&self, cell: &mut BuilderData) -> Result<()> {
+        #[cfg(not(feature = "ton"))]
         cell.append_bits(MSG_ENVELOPE_TAG, 4)?;
+        #[cfg(feature = "ton")]
+        cell.append_bits(MSG_ENVELOPE_TAG_TON, 4)?;
         self.cur_addr.write_to(cell)?;
         self.next_addr.write_to(cell)?;
         self.fwd_fee_remaining.write_to(cell)?;
         cell.checked_append_reference(self.msg.cell())?;
+        #[cfg(feature = "ton")]
+        {
+            use crate::MaybeSerialize;
+            self.emitted_lt.write_maybe_to(cell)?;
+            self.metadata.write_maybe_to(cell)?;
+        }
         Ok(())
     }
 }
@@ -552,7 +610,11 @@ impl Serializable for MsgEnvelope {
 impl Deserializable for MsgEnvelope {
     fn read_from(&mut self, cell: &mut SliceData) -> Result<()>{
         let tag = cell.get_next_int(4)? as usize;
-        if tag != MSG_ENVELOPE_TAG {
+        #[cfg(not(feature = "ton"))]
+        let is_tag_valid = tag == MSG_ENVELOPE_TAG;
+        #[cfg(feature = "ton")]
+        let is_tag_valid = tag == MSG_ENVELOPE_TAG || tag == MSG_ENVELOPE_TAG_TON;
+        if !is_tag_valid {
             fail!(
                 BlockError::InvalidConstructorTag {
                     t: tag as u32,
@@ -564,6 +626,12 @@ impl Deserializable for MsgEnvelope {
         self.next_addr.read_from(cell)?;
         self.fwd_fee_remaining.read_from(cell)?;
         self.msg.read_from_reference(cell)?;
+        #[cfg(feature = "ton")]
+        {
+            use crate::MaybeDeserialize;
+            self.emitted_lt = u64::read_maybe_from(cell)?;
+            self.metadata = MsgMetadata::read_maybe_from(cell)?;
+        }
         Ok(())
     }
 }

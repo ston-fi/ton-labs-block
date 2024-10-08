@@ -50,6 +50,14 @@ macro_rules! write_ctor_tag {
     }}
 }
 
+#[cfg(feature = "ton")]
+macro_rules! write_ctor_extended_tag {
+    ($builder:expr, $tag:ident) => {{
+        $builder.append_bits($tag as usize, 5).unwrap();
+        $builder
+    }}
+}
+
 //3.2.7. Augmentation of InMsgDescr
 #[derive(Default, PartialEq, Eq, Clone, Debug)]
 pub struct ImportFees {
@@ -104,6 +112,10 @@ const MSG_IMPORT_FIN: u8 = 0b00000100;
 const MSG_IMPORT_TR: u8 = 0b00000101;
 const MSG_DISCARD_FIN: u8 = 0b00000110;
 const MSG_DISCARD_TR: u8 = 0b00000111;
+#[cfg(feature = "ton")]
+const MSG_IMPORT_DEFERRED_FIN: u8 = 0b00000100;
+#[cfg(feature = "ton")]
+const MSG_IMPORT_DEFERRED_TR: u8 = 0b00000101;
 
 ///
 /// Inbound message
@@ -134,6 +146,12 @@ pub enum InMsg {
     /// Discarded transit internal messages
     /// msg_discard_tr$111 in_msg:^MsgEnvelope transaction_id:uint64 fwd_fee:Grams proof_delivered:^Cell = InMsg;
     DiscardedTransit(InMsgDiscardedTransit),
+    #[cfg(feature = "ton")]
+    /// msg_import_deferred_fin$00100 in_msg:^MsgEnvelope transaction:^Transaction fwd_fee:Grams = InMsg;
+    DeferredFinal(InMsgDeferredFinal),
+    #[cfg(feature = "ton")]
+    /// msg_import_deferred_tr$00101 in_msg:^MsgEnvelope out_msg:^MsgEnvelope = InMsg;
+    DeferredTransit(InMsgDeferredTransit),
 }
 
 impl fmt::Display for InMsg {
@@ -155,6 +173,12 @@ impl fmt::Display for InMsg {
                 msg_hash, x.transaction_id, x.fwd_fee),
             InMsg::DiscardedTransit(x) => write!(f, "InMsg msg_discard_tr$111 msg: {:x} tr: {:x} fee: {} proof: {:x}",
                 msg_hash, x.transaction_id, x.fwd_fee, x.proof_delivered.repr_hash()),
+            #[cfg(feature = "ton")]
+            InMsg::DeferredFinal(_x) => write!(f, "InMsg msg_import_deferred_fin$00100 msg: {:x} tr: {:x}",
+                msg_hash, tr_hash),
+            #[cfg(feature = "ton")]
+            InMsg::DeferredTransit(x) => write!(f, "InMsg msg_import_deferred_tr$00101 in_msg: {:x} out_msg: {:x}",
+                msg_hash, x.out_msg.read_struct().unwrap_or_default().message_hash()),
             InMsg::None => write!(f, "InMsg msg_unknown")
         }
     }
@@ -205,6 +229,10 @@ impl InMsg {
             InMsg::Transit(_)              => MSG_IMPORT_TR,
             InMsg::DiscardedFinal(_)       => MSG_DISCARD_FIN,
             InMsg::DiscardedTransit(_)     => MSG_DISCARD_TR,
+            #[cfg(feature = "ton")]
+            InMsg::DeferredFinal(_)        => MSG_IMPORT_DEFERRED_FIN,
+            #[cfg(feature = "ton")]
+            InMsg::DeferredTransit(_)      => MSG_IMPORT_DEFERRED_TR,
             InMsg::None => 8
         }
     }
@@ -224,6 +252,10 @@ impl InMsg {
                 InMsg::Transit(ref _x) => None,
                 InMsg::DiscardedFinal(ref _x) => None,
                 InMsg::DiscardedTransit(ref _x) => None,
+                #[cfg(feature = "ton")]
+                InMsg::DeferredFinal(ref x) => Some(x.read_transaction()?),
+                #[cfg(feature = "ton")]
+                InMsg::DeferredTransit(ref _x) => None,
                 InMsg::None => fail!("wrong message type")
             }
         )
@@ -243,6 +275,10 @@ impl InMsg {
             InMsg::Transit(ref _x) => None,
             InMsg::DiscardedFinal(ref _x) => None,
             InMsg::DiscardedTransit(ref _x) => None,
+            #[cfg(feature = "ton")]
+            InMsg::DeferredFinal(ref x) => Some(x.transaction_cell()),
+            #[cfg(feature = "ton")]
+            InMsg::DeferredTransit(ref _x) => None,
             InMsg::None => None,
         }
     }
@@ -259,6 +295,10 @@ impl InMsg {
             InMsg::Transit(ref x) => x.read_in_message()?.read_message(),
             InMsg::DiscardedFinal(ref x) => x.read_envelope_message()?.read_message(),
             InMsg::DiscardedTransit(ref x) => x.read_envelope_message()?.read_message(),
+            #[cfg(feature = "ton")]
+            InMsg::DeferredFinal(ref x) => x.read_envelope_message()?.read_message(),
+            #[cfg(feature = "ton")]
+            InMsg::DeferredTransit(ref x) => x.read_in_message()?.read_message(),
             InMsg::None => fail!("wrong msg type")
         }
     }
@@ -276,6 +316,10 @@ impl InMsg {
                 InMsg::Transit(ref x) => x.read_in_message()?.message_cell(),
                 InMsg::DiscardedFinal(ref x) => x.read_envelope_message()?.message_cell(),
                 InMsg::DiscardedTransit(ref x) => x.read_envelope_message()?.message_cell(),
+                #[cfg(feature = "ton")]
+                InMsg::DeferredFinal(ref x) => x.read_envelope_message()?.message_cell(),
+                #[cfg(feature = "ton")]
+                InMsg::DeferredTransit(ref x) => x.read_in_message()?.message_cell(),
                 InMsg::None => fail!("wrong message type")
             }
         )
@@ -293,6 +337,10 @@ impl InMsg {
             InMsg::Transit(ref x) => Some(x.in_msg.cell()),
             InMsg::DiscardedFinal(ref x) => Some(x.envelope_message_cell()),
             InMsg::DiscardedTransit(ref x) => Some(x.in_msg.cell()),
+            #[cfg(feature = "ton")]
+            InMsg::DeferredFinal(ref x) => Some(x.envelope_message_cell()),
+            #[cfg(feature = "ton")]
+            InMsg::DeferredTransit(ref x) => Some(x.in_msg.cell()),
             InMsg::None => None,
         }
     }
@@ -310,6 +358,10 @@ impl InMsg {
                 InMsg::Transit(ref x) => Some(x.read_in_message()?),
                 InMsg::DiscardedFinal(ref x) => Some(x.read_envelope_message()?),
                 InMsg::DiscardedTransit(ref x) => Some(x.read_envelope_message()?),
+                #[cfg(feature = "ton")]
+                InMsg::DeferredFinal(ref x) => Some(x.read_envelope_message()?),
+                #[cfg(feature = "ton")]
+                InMsg::DeferredTransit(ref x) => Some(x.read_in_message()?),
                 InMsg::None => fail!("wrong message type"),
             }
         )
@@ -327,6 +379,10 @@ impl InMsg {
             InMsg::Transit(ref x) => Some(x.out_msg.cell()),
             InMsg::DiscardedFinal(_) => None,
             InMsg::DiscardedTransit(_) => None,
+            #[cfg(feature = "ton")]
+            InMsg::DeferredFinal(_) => None,
+            #[cfg(feature = "ton")]
+            InMsg::DeferredTransit(ref x) => Some(x.out_msg.cell()),
             InMsg::None => None,
         }
     }
@@ -343,6 +399,10 @@ impl InMsg {
             InMsg::Transit(ref x) => Some(x.read_out_message()).transpose(),
             InMsg::DiscardedFinal(_) => Ok(None),
             InMsg::DiscardedTransit(_) => Ok(None),
+            #[cfg(feature = "ton")]
+            InMsg::DeferredFinal(_) => Ok(None),
+            #[cfg(feature = "ton")]
+            InMsg::DeferredTransit(ref x) => Some(x.read_out_message()).transpose(),
             InMsg::None => fail!("wrong message type")
         }
     }
@@ -410,6 +470,18 @@ impl Augmentation<ImportFees> for InMsg {
 
                 fees.value_imported.grams = header.fwd_fee;
             }
+            #[cfg(feature = "ton")]
+            InMsg::DeferredFinal(_) => {
+                fees.fees_collected = header.fwd_fee;
+
+                fees.value_imported.grams = header.fwd_fee;
+            }
+            #[cfg(feature = "ton")]
+            InMsg::DeferredTransit(_) => {
+                fees.fees_collected = header.fwd_fee;
+
+                fees.value_imported.grams = header.fwd_fee;
+            }
             InMsg::None => fail!("wrong InMsg type")
         }
         Ok(fees)
@@ -426,6 +498,10 @@ impl Serializable for InMsg {
             InMsg::Transit(ref x) => x.write_to(write_ctor_tag!(cell, MSG_IMPORT_TR)),
             InMsg::DiscardedFinal(ref x) => x.write_to(write_ctor_tag!(cell, MSG_DISCARD_FIN)),
             InMsg::DiscardedTransit(ref x) => x.write_to(write_ctor_tag!(cell, MSG_DISCARD_TR)),
+            #[cfg(feature = "ton")]
+            InMsg::DeferredFinal(ref x) => x.write_to(write_ctor_extended_tag!(cell, MSG_IMPORT_DEFERRED_FIN)),
+            #[cfg(feature = "ton")]
+            InMsg::DeferredTransit(ref x) => x.write_to(write_ctor_extended_tag!(cell, MSG_IMPORT_DEFERRED_TR)),
             InMsg::None => Ok(()), // Due to ChildCell it is need sometimes to serialize default InMsg
         }
     }
@@ -442,6 +518,20 @@ impl Deserializable for InMsg {
             MSG_IMPORT_TR =>  read_msg_descr!(cell, InMsgTransit, Transit),
             MSG_DISCARD_FIN => read_msg_descr!(cell, InMsgDiscardedFinal, DiscardedFinal),
             MSG_DISCARD_TR => read_msg_descr!(cell, InMsgDiscardedTransit, DiscardedTransit),
+            #[cfg(feature = "ton")]
+            0b00000001 => {
+                let subtag = (cell.get_next_bits(2)?[0] & 0b11000000) >> 6;
+                match subtag {
+                    0b00 => read_msg_descr!(cell, InMsgDeferredFinal, DeferredFinal),
+                    0b01 => read_msg_descr!(cell, InMsgDeferredTransit, DeferredTransit),
+                    _ => fail!(
+                        BlockError::InvalidConstructorTag {
+                            t: ((tag << 2) | subtag) as u32,
+                            s: "InMsg".to_string()
+                        }
+                    )
+                }
+            }
             tag => fail!(
                 BlockError::InvalidConstructorTag {
                     t: tag as u32,
@@ -805,6 +895,109 @@ impl Deserializable for InMsgDiscardedTransit {
         self.transaction_id.read_from(cell)?;
         self.fwd_fee.read_from(cell)?;
         self.proof_delivered = cell.checked_drain_reference()?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "ton")]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct InMsgDeferredFinal {
+    in_msg: ChildCell<MsgEnvelope>,
+    transaction: ChildCell<Transaction>,
+    pub fwd_fee: Grams,
+}
+
+#[cfg(feature = "ton")]
+impl InMsgDeferredFinal {
+    pub fn read_envelope_message(&self) -> Result<MsgEnvelope> {
+        self.in_msg.read_struct()
+    }
+
+    pub fn envelope_message_cell(&self) -> Cell {
+        self.in_msg.cell()
+    }
+
+    pub fn envelope_message_hash(&self) -> UInt256 {
+        self.in_msg.hash()
+    }
+
+    pub fn message_cell(&self)-> Result<Cell> {
+        Ok(self.in_msg.read_struct()?.message_cell())
+    }
+
+    pub fn read_transaction(&self) -> Result<Transaction> {
+        self.transaction.read_struct()
+    }
+
+    pub fn transaction_cell(&self)-> Cell {
+        self.transaction.cell()
+    }
+}
+
+#[cfg(feature = "ton")]
+impl Serializable for InMsgDeferredFinal {
+    fn write_to(&self, cell: &mut BuilderData) -> Result<()> {
+        cell.checked_append_reference(self.in_msg.cell())?;
+        cell.checked_append_reference(self.transaction.cell())?;
+        self.fwd_fee.write_to(cell)?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "ton")]
+impl Deserializable for InMsgDeferredFinal {
+    fn read_from(&mut self, cell: &mut SliceData) -> Result<()> {
+        self.in_msg.read_from_reference(cell)?;
+        self.transaction.read_from_reference(cell)?;
+        self.fwd_fee.read_from(cell)?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "ton")]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct InMsgDeferredTransit {
+    in_msg: ChildCell<MsgEnvelope>,
+    out_msg: ChildCell<MsgEnvelope>,
+}
+
+#[cfg(feature = "ton")]
+impl InMsgDeferredTransit {
+    pub fn read_in_message(&self) -> Result<MsgEnvelope> {
+        self.in_msg.read_struct()
+    }
+
+    pub fn read_out_message(&self) -> Result<MsgEnvelope> {
+        self.out_msg.read_struct()
+    }
+
+    pub fn in_envelope_message_cell(&self)-> Cell {
+        self.in_msg.cell()
+    }
+
+    pub fn in_envelope_message_hash(&self)-> UInt256 {
+        self.in_msg.hash()
+    }
+
+    pub fn out_envelope_message_cell(&self)-> Cell {
+        self.out_msg.cell()
+    }
+}
+
+#[cfg(feature = "ton")]
+impl Serializable for InMsgDeferredTransit {
+    fn write_to(&self, cell: &mut BuilderData) -> Result<()> {
+        cell.checked_append_reference(self.in_msg.cell())?;
+        cell.checked_append_reference(self.out_msg.cell())?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "ton")]
+impl Deserializable for InMsgDeferredTransit {
+    fn read_from(&mut self, cell: &mut SliceData) -> Result<()> {
+        self.in_msg.read_from_reference(cell)?;
+        self.out_msg.read_from_reference(cell)?;
         Ok(())
     }
 }
