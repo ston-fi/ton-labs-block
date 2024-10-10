@@ -50,6 +50,10 @@ const OUT_MSG_DEQ_IMM: u8 = 0b100;
 const OUT_MSG_DEQ: u8 = 0b1100; // is not used due CapShortDequeue
 const OUT_MSG_DEQ_SHORT: u8 = 0b1101;
 const OUT_MSG_TRDEQ: u8 = 0b111; // is not used due CapOffHypercube
+#[cfg(feature = "ton")]
+const OUT_MSG_NEW_DEFER: u8 = 0b10100;
+#[cfg(feature = "ton")]
+const OUT_MSG_DEFERRED_TR: u8 = 0b10101;
 
 /*
 _ enqueued_lt:uint64 out_msg:^MsgEnvelope = EnqueuedMsg;
@@ -457,6 +461,12 @@ pub enum OutMsg {
     DequeueShort(OutMsgDequeueShort),
     /// msg_export_tr_req$111 out_msg:^MsgEnvelope imported:^InMsg = OutMsg;
     TransitRequeued(OutMsgTransitRequeued),
+    #[cfg(feature = "ton")]
+    /// msg_export_new_defer$10100 out_msg:^MsgEnvelope transaction:^Transaction = OutMsg;
+    NewDefer(OutMsgNewDefer),
+    #[cfg(feature = "ton")]
+    /// msg_export_deferred_tr$10101 out_msg:^MsgEnvelope imported:^InMsg = OutMsg;
+    DeferredTransit(OutMsgDeferredTransit),
 }
 
 impl OutMsg {
@@ -514,6 +524,10 @@ impl OutMsg {
             OutMsg::DequeueShort(_)       => OUT_MSG_DEQ_SHORT, // 4 bits
             OutMsg::DequeueImmediate(_)   => OUT_MSG_DEQ_IMM,
             OutMsg::TransitRequeued(_)    => OUT_MSG_TRDEQ,
+            #[cfg(feature = "ton")]
+            OutMsg::NewDefer(_)          => OUT_MSG_NEW_DEFER,
+            #[cfg(feature = "ton")]
+            OutMsg::DeferredTransit(_)   => OUT_MSG_DEFERRED_TR,
             OutMsg::None => 16
         }
     }
@@ -532,6 +546,10 @@ impl OutMsg {
                 OutMsg::DequeueShort(_) => None,
                 OutMsg::DequeueImmediate(ref x) => Some(x.read_out_message()?),
                 OutMsg::TransitRequeued(ref x) => Some(x.read_out_message()?),
+                #[cfg(feature = "ton")]
+                OutMsg::NewDefer(ref x) => Some(x.read_out_message()?),
+                #[cfg(feature = "ton")]
+                OutMsg::DeferredTransit(ref x) => Some(x.read_out_message()?),
                 OutMsg::None => fail!("wrong message type")
             }
         )
@@ -550,6 +568,10 @@ impl OutMsg {
             OutMsg::DequeueShort(_) => None,
             OutMsg::DequeueImmediate(ref x) => Some(x.out_message_cell()),
             OutMsg::TransitRequeued(ref x) => Some(x.out_message_cell()),
+            #[cfg(feature = "ton")]
+            OutMsg::NewDefer(ref x) => Some(x.out_message_cell()),
+            #[cfg(feature = "ton")]
+            OutMsg::DeferredTransit(ref x) => Some(x.out_message_cell()),
             OutMsg::None => None
         }
     }
@@ -568,6 +590,10 @@ impl OutMsg {
                 OutMsg::DequeueShort(_) => None,
                 OutMsg::DequeueImmediate(ref x) => Some(x.read_out_message()?.read_message()?),
                 OutMsg::TransitRequeued(ref x) => Some(x.read_out_message()?.read_message()?),
+                #[cfg(feature = "ton")]
+                OutMsg::NewDefer(ref x) => Some(x.read_out_message()?.read_message()?),
+                #[cfg(feature = "ton")]
+                OutMsg::DeferredTransit(ref x) => Some(x.read_out_message()?.read_message()?),
                 OutMsg::None => fail!("wrong message type")
             }
         )
@@ -587,6 +613,10 @@ impl OutMsg {
                 OutMsg::DequeueShort(_) => fail!("dequeue short out msg doesn't have message hash"),
                 OutMsg::DequeueImmediate(ref x) => x.read_out_message()?.message_hash(),
                 OutMsg::TransitRequeued(ref x) => x.read_out_message()?.message_hash(),
+                #[cfg(feature = "ton")]
+                OutMsg::NewDefer(ref x) => x.read_out_message()?.message_hash(),
+                #[cfg(feature = "ton")]
+                OutMsg::DeferredTransit(ref x) => x.read_out_message()?.message_hash(),
                 OutMsg::None => fail!("wrong message type")
             }
         )
@@ -606,6 +636,10 @@ impl OutMsg {
                 OutMsg::DequeueShort(_) => None,
                 OutMsg::DequeueImmediate(ref x) => Some(x.read_out_message()?.message_cell()),
                 OutMsg::TransitRequeued(ref x) => Some(x.read_out_message()?.message_cell()),
+                #[cfg(feature = "ton")]
+                OutMsg::NewDefer(ref x) => Some(x.read_out_message()?.message_cell()),
+                #[cfg(feature = "ton")]
+                OutMsg::DeferredTransit(ref x) => Some(x.read_out_message()?.message_cell()),
                 OutMsg::None => fail!("wrong message type")
             }
         )
@@ -624,6 +658,10 @@ impl OutMsg {
             OutMsg::DequeueShort(ref x) => Some(x.msg_env_hash),
             OutMsg::DequeueImmediate(ref x) => Some(x.out_message_cell().repr_hash()),
             OutMsg::TransitRequeued(ref x) => Some(x.out_message_cell().repr_hash()),
+            #[cfg(feature = "ton")]
+            OutMsg::NewDefer(ref x) => Some(x.out_message_cell().repr_hash()),
+            #[cfg(feature = "ton")]
+            OutMsg::DeferredTransit(ref x) => Some(x.out_message_cell().repr_hash()),
             OutMsg::None => None
         }
     }
@@ -638,6 +676,10 @@ impl OutMsg {
             OutMsg::DequeueShort(ref _x) => None,
             OutMsg::DequeueImmediate(ref _x) => None,
             OutMsg::TransitRequeued(ref _x) => None,
+            #[cfg(feature = "ton")]
+            OutMsg::NewDefer(ref x) => Some(x.transaction_cell()),
+            #[cfg(feature = "ton")]
+            OutMsg::DeferredTransit(ref _x) => None,
             OutMsg::None => None,
         }
     }
@@ -655,6 +697,7 @@ impl OutMsg {
             OutMsg::Transit(ref x) => Some(x.read_imported()).transpose(),
             OutMsg::DequeueImmediate(ref x) => Some(x.read_reimport_message()).transpose(),
             OutMsg::TransitRequeued(ref x) => Some(x.read_imported()).transpose(),
+            OutMsg::DeferredTransit(ref x) => Some(x.read_imported()).transpose(),
             _ => Ok(None),
         }
     }
@@ -665,6 +708,7 @@ impl OutMsg {
             OutMsg::Transit(ref x) => Some(x.imported_cell()),
             OutMsg::DequeueImmediate(ref x) => Some(x.reimport_message_cell()),
             OutMsg::TransitRequeued(ref x) => Some(x.imported_cell()),
+            OutMsg::DeferredTransit(ref x) => Some(x.imported_cell()),
             _ => None
         }
     }
@@ -751,6 +795,10 @@ impl Serializable for OutMsg {
             OutMsg::DequeueShort(ref x) => x.write_to(write_out_ctor_tag!(cell, OUT_MSG_DEQ_SHORT, 4)),
             OutMsg::DequeueImmediate(ref x) => x.write_to(write_out_ctor_tag!(cell, OUT_MSG_DEQ_IMM, 3)),
             OutMsg::TransitRequeued(ref x) => x.write_to(write_out_ctor_tag!(cell, OUT_MSG_TRDEQ, 3)),
+            #[cfg(feature = "ton")]
+            OutMsg::NewDefer(ref x) => x.write_to(write_out_ctor_tag!(cell, OUT_MSG_NEW_DEFER, 5)),
+            #[cfg(feature = "ton")]
+            OutMsg::DeferredTransit(ref x) => x.write_to(write_out_ctor_tag!(cell, OUT_MSG_DEFERRED_TR, 5)),
             OutMsg::None => fail!(
                 BlockError::InvalidOperation("OutMsg::None can't be serialized".to_string())
             )
@@ -772,6 +820,13 @@ impl Deserializable for OutMsg {
                 match (tag << 1) | cell.get_next_bit_int().unwrap() as u8 {
                     OUT_MSG_DEQ => read_out_msg_descr!(cell, OutMsgDequeue, Dequeue),
                     OUT_MSG_DEQ_SHORT => read_out_msg_descr!(cell, OutMsgDequeueShort, DequeueShort),
+                    _ => unreachable!()
+                }
+            },
+            tag if cell.remaining_bits() >= 2 && (tag == OUT_MSG_NEW_DEFER >> 2 || tag == OUT_MSG_DEFERRED_TR >> 2) => {
+                match (tag << 2) | cell.get_next_int(2).unwrap() as u8 {
+                    OUT_MSG_NEW_DEFER => read_out_msg_descr!(cell, OutMsgNewDefer, NewDefer),
+                    OUT_MSG_DEFERRED_TR => read_out_msg_descr!(cell, OutMsgDeferredTransit, DeferredTransit),
                     _ => unreachable!()
                 }
             },
@@ -1186,6 +1241,110 @@ impl Serializable for OutMsgTransitRequeued {
 }
 
 impl Deserializable for OutMsgTransitRequeued {
+    fn read_from(&mut self, cell: &mut SliceData) -> Result<()> {
+        self.out_msg.read_from_reference(cell)?;
+        self.imported.read_from_reference(cell)?;
+        Ok(())
+    }
+}
+
+/// msg_export_new_defer$10100 out_msg:^MsgEnvelope transaction:^Transaction = OutMsg;
+#[cfg(feature = "ton")]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct OutMsgNewDefer {
+    out_msg: ChildCell<MsgEnvelope>,
+    transaction: ChildCell<Transaction>,
+}
+
+#[cfg(feature = "ton")]
+impl OutMsgNewDefer {
+    pub fn with_cells(env_cell: Cell, tr_cell: Cell) -> Self {
+        OutMsgNewDefer {
+            out_msg: ChildCell::with_cell(env_cell),
+            transaction: ChildCell::with_cell(tr_cell),
+        }
+    }
+
+    pub fn read_out_message(&self) -> Result<MsgEnvelope> {
+        self.out_msg.read_struct()
+    }
+
+    pub fn out_message_cell(&self)-> Cell {
+        self.out_msg.cell()
+    }
+
+    pub fn read_transaction(&self) -> Result<Transaction> {
+        self.transaction.read_struct()
+    }
+
+    pub fn transaction_cell(&self)-> Cell {
+        self.transaction.cell()
+    }
+}
+
+#[cfg(feature = "ton")]
+impl Serializable for OutMsgNewDefer {
+    fn write_to(&self, cell: &mut BuilderData) -> Result<()> {
+        cell.checked_append_reference(self.out_msg.cell())?;
+        cell.checked_append_reference(self.transaction.cell())?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "ton")]
+impl Deserializable for OutMsgNewDefer {
+    fn read_from(&mut self, cell: &mut SliceData) -> Result<()> {
+        self.out_msg.read_from_reference(cell)?;
+        self.transaction.read_from_reference(cell)?;
+        Ok(())
+    }
+}
+
+/// msg_export_deferred_tr$10101 out_msg:^MsgEnvelope imported:^InMsg = OutMsg;
+#[cfg(feature = "ton")]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct OutMsgDeferredTransit {
+    out_msg: ChildCell<MsgEnvelope>,
+    imported: ChildCell<InMsg>,
+}
+
+#[cfg(feature = "ton")]
+impl OutMsgDeferredTransit {
+    pub fn with_cells(env_cell: Cell, imported_cell: Cell) -> Self {
+        OutMsgDeferredTransit {
+            out_msg: ChildCell::with_cell(env_cell),
+            imported: ChildCell::with_cell(imported_cell),
+        }
+    }
+
+    pub fn read_out_message(&self) -> Result<MsgEnvelope> {
+        self.out_msg.read_struct()
+    }
+
+    pub fn out_message_cell(&self)-> Cell {
+        self.out_msg.cell()
+    }
+
+    pub fn read_imported(&self) -> Result<InMsg> {
+        self.imported.read_struct()
+    }
+
+    pub fn imported_cell(&self)-> Cell {
+        self.imported.cell()
+    }
+}
+
+#[cfg(feature = "ton")]
+impl Serializable for OutMsgDeferredTransit {
+    fn write_to(&self, cell: &mut BuilderData) -> Result<()> {
+        cell.checked_append_reference(self.out_msg.cell())?;
+        cell.checked_append_reference(self.imported.cell())?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "ton")]
+impl Deserializable for OutMsgDeferredTransit {
     fn read_from(&mut self, cell: &mut SliceData) -> Result<()> {
         self.out_msg.read_from_reference(cell)?;
         self.imported.read_from_reference(cell)?;
